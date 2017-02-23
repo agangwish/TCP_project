@@ -51,10 +51,19 @@ int main(int argc, char *argv[])
       MinetSendToMonitor(MinetMonitoringEvent("Unknown event ignored."));
     // if we received a valid event from Minet, do processing
     } else {
-      cerr << "invalid event from Minet" << endl;
-      //  Data from the IP layer below  //
+      cerr << "\nValid event from Minet, handling...\n" << endl;
+	/***************/	
+	/***** MUX *****/
+	/***************/
       if (event.handle==mux) {
+	cerr << "IN MUX HANDLER\n\n";
         Packet p;
+	Connection c;
+	unsigned char tcp_flags, ip_flags, iph_len, tcph_len;
+	unsigned char &iph_len_ptr = iph_len;
+	unsigned char &tcph_len_ptr = tcph_len;
+	short unsigned int total_len, win_size;
+	unsigned int seq_num, ack_num;
         MinetReceive(mux,p);
         unsigned tcphlen=TCPHeader::EstimateTCPHeaderLength(p);
         cerr << "estimated header len="<<tcphlen<<"\n";
@@ -65,10 +74,41 @@ int main(int argc, char *argv[])
         cerr << "TCP Packet: IP Header is "<<ipl<<" and ";
         cerr << "TCP Header is "<<tcph << " and ";
 
-        cerr << "Checksum is " << (tcph.IsCorrectChecksum(p) ? "VALID" : "INVALID");
-        
+        cerr << "Checksum is " << (tcph.IsCorrectChecksum(p) ? "VALID" : "INVALID") << endl;
+
+	/***** Extract Data from packet *****/
+	cerr << "\nGETTING CONNECTION INFO FROM PACKET...\n";
+	ipl.GetDestIP(c.src);		// get destination IP and store as source
+	cerr << "\tSOURCE IP: " << c.src << endl; 
+	ipl.GetSourceIP(c.dest);	// get source IP and store as dest
+	cerr << "\tDESTINATION IP: " << c.dest << endl;
+	tcph.GetDestPort(c.srcport);	// get destination port and store as source
+	cerr << "\tSOURCE PORT: " << c.srcport << endl;
+	tcph.GetSourcePort(c.destport);	// get source port and store as dest
+	cerr << "\tDESTINATION PORT: " << c.destport << endl;
+	c.protocol = IP_PROTO_TCP;	// set TCP/IP protocol
+	ipl.GetFlags(ip_flags);		// get IP flags
+	cerr << "\tIP FLAGS: " << ip_flags << endl;
+	tcph.GetFlags(tcp_flags);	// get TCP flags
+	cerr << "\tTCP FLAGS: " << tcp_flags << endl;	
+	tcph.GetSeqNum(seq_num);	// get Sequence number
+	cerr << "\tSEQ NUM: " << seq_num << endl;
+	tcph.GetAckNum(ack_num);	// get ACK number
+	cerr << "\tACK NUM: " << ack_num << endl;
+	tcph.GetWinSize(win_size);	// update window size
+	cerr << "\tWINDOW SIZE: " << win_size << endl;
+	tcph.GetHeaderLen(tcph_len_ptr); 
+	cerr << "\tTCP header length: " << tcph_len << endl;
+	ipl.GetTotalLength(total_len);	// total packet size
+	cerr << "\tTotal Packet Length: " << total_len << endl;
+	ipl.GetHeaderLength(iph_len_ptr);	// IP header length
+	cerr << "\tIP header length: " << iph_len << endl;	
+	total_len = total_len - tcphlen - iph_len;
+	cerr << "\tTOTAL DATA LENGTH: " << total_len << endl;
       }
-          //  Data from the Sockets layer above  //
+	/******************/	
+	/***** SOCKET *****/
+	/******************/
       if (event.handle==sock) {
         SockRequestResponse s;
         MinetReceive(sock,s);
