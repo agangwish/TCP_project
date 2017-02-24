@@ -1,0 +1,66 @@
+Specs
+•	You only need to implement Go-Back-N 
+•	You do not have to support outstanding connections (i.e., an incoming connection queue to support the listen backlog) in a passive open. 
+•	You do not have to implement congestion control. 
+•	You do not have to implement support for the URG and PSH flags, the urgent pointer, or urgent (out-of-band) data. 
+•	You do not have to support TCP options. 
+•	You do not have to implement a keep-alive timer 
+•	You do not have to implement the Nagle algorithm. 
+•	You do not have to implement delayed acknowledgements. 
+•	You do not have to generate or handle ICMP errors. 
+•	You may assume that simultaneous opens and closes do not occur 
+•	You may assume that sock_module only makes valid requests (that is, you do not have to worry about application errors) 
+•	You may assume that exceptional conditions such as aborts do not occur. 
+•	You should generate IP packets no larger than 576 bytes, and you should set your MSS (maximum [TCP] segment size) accordingly, to 536 bytes. Notice that this is the default MSS that TCP uses if there is no MSS option when a connection is negotiated. 
+
+Task List
+1.	Phase 1 – Complete
+  a.	Compile Minet
+  b.	Print arriving packets and socket requests
+      i.	Minet.h
+      ii.	Packet.h
+      iii.	Buffer.h
+      iv.	Ip.h
+      v. Tcp.h
+  c.	Implement MinetGetNextEvent’s timeout feature
+  d.	Implement connection FSM
+2.	Phase 2 – Data Flow
+  a.	Handle incoming ip packets by adding code to handle passive open
+    i.	minetAccept
+    ii.	need to include a timer to handle lost packets
+      1.	tcp.h and ip.h helpful
+    iii.	passive refers to when you receive a SYN in listen state
+    iv.	need to send SYN-ACK and set a timeout for the expected ACK from the remote side
+  b.	Build out wrapper function framework for testing
+    i.	Variable for dropping probability
+    ii.	Queue that is reordered to test packet reordering
+  c.	Implement Active opens with MinetConnect
+     i.	Need to send a syn to remote side
+     ii.	Initialize tcp variables like sequence number and the send window and timeout
+  d.	Add code to handle data transfer
+     i.	Figure out how timers are implemented
+    ii.	Implement flow control
+      1.	Recommended approach is stop-and-wait first then try go-back-n
+  e.	Handle active closes (Marc says you can do these with CTRL-D)
+      i.	Receive a FIN from the remote site or a close from the socket layer
+        1.	Marc says it is not a FIN it is actually a WRITE with 0 bytes or something
+3.	Phase 3 – Socket Layer
+  a.	Add code to keep track of outstanding requests in the active open state
+  b.	Add code to support connect request
+     i.	Create a connection address to state mapping and initiate an active open with connect
+  c.	Add code to support passive open
+  d.	Add code to ass passively open connection address up to sock module as zero byte WRITE requests
+  e.	Add close 
+  f.	Add code to support WRITE with push data into the connection’s output queue
+  g.	Add code to send new data up to the sock module as WRITE requests
+  i.	Sock can refuse a write, should wait and resend later 
+  h.	Verify generation and use of STATUS requests are correct
+4.Phase 4 – testing
+  a.	Run ./start_minet.sh “tcp_server u <port>” and accept a connection with nc on another machine, receive and print data and handle CTRL-C on the nc client as passive close
+  b.	“tcp_client u <host_ip> <port>” should be able to connect to a listening nc server on another machine and send data to it and handle an active close with CTRL-D
+  c.	“http_server1 u <port>” should be able to connect to it from telnet and handle a get request as in project 1 
+5.	README
+  a.	Names of team members
+  b.	Brief specification of work undertaken by each member
+  c.	Any specific you may need to share
+
