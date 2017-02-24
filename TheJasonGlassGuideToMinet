@@ -26,25 +26,25 @@ data_type_of_communicaton_between_modules:
 *
 SockLibRequestResponse:
 *
-*									[APPLICATION]
+*													 		 	[APPLICATION]
 *                           		      |
 *                          		[LIBMINET_SOCKET]
-*                          		          |
-SockRequestReponse:					{SOCK_MODULE}
-*              							  |
+*                          		        |
+SockRequestReponse:							{SOCK_MODULE}
+*              												|
 Packet: 		{UDP_MODULE}{TCP_MODULE}{ICMP_MODULE}{IPOTHER_MODULE}
-*					|         |           |                   |
-*				[**********************IP_MUX********************]
-*				              |		 	  |			|
+*								|         |           |                   |
+*						[**********************IP_MUX********************]
+*													|						|						|
 RawEthernetPacket		{ARP_MODULE}{IP_MODULE}{OTHER_MODULE}
-*									   	  |						|						|
-*							[***********ETHERNET_MUX**********]
-*										  |
-*									[DEVICE_DRIVER]
-*										  |
-*									  [ETHERNET]
-*									  |        |
-*			| |	|				   {READER}{WRITER}
+*													|						|						|
+*										[***********ETHERNET_MUX**********]
+*																			|
+*																[DEVICE_DRIVER]
+*																			|
+*																  [ETHERNET]
+*																	|       |
+*			  | |	|					 				 {READER}{WRITER}
 *		->[MONITOR]<-
 *		->[JAVA_GUI]<-
 *
@@ -80,7 +80,7 @@ TCP
 TCPSTATE
 UDP
 UTIL
-
+ 
 
 
 */
