@@ -15,12 +15,24 @@
 
 #include "Minet.h"
 #include "tcpstate.h"
+#include "ip.h"
 
 
 using std::cout;
 using std::endl;
 using std::cerr;
 using std::string;
+
+#define SYN 	0
+#define ACK  	1
+#define SYN_ACK 2
+#define PSH_ACK 3
+#define FIN	4
+#define FIN_ACK	5
+#define RST	6
+
+void makePacket(Packet &p, ConnectionToStateMapping<TCPState> &ctsm, int type, int data_len);
+
 
 int main(int argc, char *argv[])
 {
@@ -74,6 +86,7 @@ int main(int argc, char *argv[])
       if (event.handle==mux) {
 	cerr << "IN MUX HANDLER\n\n";
         Packet p;
+	Packet p_send;	// packet for sending
 	Connection c;
 	Buffer data_buf;
 	SockRequestResponse request;
@@ -138,7 +151,7 @@ int main(int argc, char *argv[])
 		response.bytes = 0;
 		response.error = EOK;
 		cerr << "\tSending Response..." << endl;
-		MinetSend(sock, response);
+		//MinetSend(sock, response);
 		cerr << "\tResponse Sent via MinetSend" << endl;
 	}
 	state = conn_list_iter->state.GetState();	// get the current state of the connection
@@ -147,21 +160,58 @@ int main(int argc, char *argv[])
 	switch(state) {
 		case LISTEN:
 			cerr << "LISTENING in MUX..." << endl;
-			if (IS_SYN(tcp_flags)) {	// SYN packet was received
+			/***** SYN Packet Received *****/			
+			if (IS_SYN(tcp_flags)) {
 				cerr << "\tSYN packet received" << endl;
+				conn_list_iter->connection = c;
+				conn_list_iter->state.SetState(SYN_RCVD);	// Set state to SYN_RCVD
+				conn_list_iter->state.last_acked = conn_list_iter->state.last_sent;
+				conn_list_iter->state.SetLastRecvd(seq_num + 1);
+				conn_list_iter->bTmrActive = true;	// set timeout
+				conn_list_iter->timeout = Time() + 5;	// 5 seconds
+				
+				conn_list_iter->state.last_sent = conn_list_iter->state.last_sent + 1;
+				makePacket(p_send, *conn_list_iter, SYN_ACK, 0); // build a SYNACK packet
+				cerr << "\tAttempting to send SYNACK packet" << endl;
+				MinetSend(mux, p_send);	// send SYNACK packet
+				sleep(2);			// wait 2 seconds
+				MinetSend(mux, p_send);	// resend SYNACK packet
 			}
 			cerr << "FINISHED LISTENING" << endl;
 			break;
 	      	case SYN_RCVD:
+			cerr << "SYN Received" << endl;
+			break;
 	      	case SYN_SENT:
+			cerr << "SYN Sent" << endl;
+			break;
 	      	case SYN_SENT1:
+			cerr << "SYN SENT 1" << endl;
+			break;
 	      	case ESTABLISHED:
+			cerr << "ESTABLISHED" << endl;
+			break;
 	      	case SEND_DATA:
+			cerr << "SEND DATA" << endl;
+			break;
 	      	case CLOSE_WAIT:
+			cerr << "CLOSE WAIT" << endl;
+			break;
 	      	case FIN_WAIT1:
+			cerr << "FIN WAIT 1" << endl;
+			break;
 	      	case CLOSING:
+			cerr << "CLOSING" << endl;
+			break;
 	      	case LAST_ACK:
+			cerr << "LAST ACK" << endl;
+			break;
 	      	case FIN_WAIT2:
+			cerr << "FIN WAIT 2" << endl;
+			break;
+		default:
+			cerr << "ENTERED DEFAULT CASE" << endl;
+			break;
 	}
 
       }
@@ -176,4 +226,64 @@ int main(int argc, char *argv[])
     }
   }
   return 0;
+}
+
+
+void makePacket(Packet &p, ConnectionToStateMapping<TCPState> &ctsm, int type, int data_len) {
+	int total_len = data_len + IP_HEADER_BASE_LENGTH + TCP_HEADER_BASE_LENGTH;
+	unsigned char flags;
+	cerr << "\n***** BUILDING PACKET *****" << endl;
+	/***** SET IP HEADER *****/	
+	IPHeader iph;
+	iph.SetProtocol(IP_PROTO_TCP);		// set to TCP/IP protocol
+	iph.SetSourceIP(ctsm.connection.src);	// set source IP address
+	iph.SetDestIP(ctsm.connection.dest);	// set destination IP address
+	iph.SetTotalLength(total_len);		// set packet size
+	p.PushFrontHeader(iph);			// add IP header to packet
+	cerr << "\tIP Header created" << endl;
+	/***** SET TCP HEADER *****/	
+	TCPHeader tcph;
+	tcph.SetSourcePort(ctsm.connection.srcport, p);	// add source port
+	tcph.SetDestPort(ctsm.connection.destport, p);	// add dest port
+	tcph.SetHeaderLen(TCP_HEADER_BASE_LENGTH, p);	// add header length
+	tcph.SetAckNum(ctsm.state.GetLastRecvd(), p);	// set ack number
+	tcph.SetWinSize(ctsm.state.GetRwnd(), p);	// set window size
+	tcph.SetUrgentPtr(0, p);			// set urgency to 0
+	cerr << "\tselecting packet type..." << endl;
+
+	switch (type) {		// set flags based on type
+		case SYN:
+			SET_SYN(flags);	// set as a SYN
+			break;
+		case ACK:
+			SET_ACK(flags);	// set as an ACK
+			break;
+		case SYN_ACK:
+			SET_SYN(flags);	// set as a SYN
+			SET_ACK(flags);	// set as an ACK
+			break;
+		case PSH_ACK:
+			SET_PSH(flags);	// set as a PSH
+			SET_ACK(flags);	// set as an ACK
+			break;
+		case FIN:
+			SET_FIN(flags);	// set as a FIN
+			break;
+		case FIN_ACK:
+			SET_FIN(flags);	// set as a FIN
+			SET_ACK(flags);	// set as an ACK
+			break;
+		case RST:
+			SET_RST(flags); // set as a RST
+			break;
+		default:
+			cerr << "INVALID PACKET TYPE SPECIFIED" << endl;
+			break;
+	}
+	tcph.SetFlags(flags, p);		// set flags
+	tcph.SetSeqNum(ctsm.GetLastSent(), p);	// set sequence number
+	tcph.RecomputeChecksum(p);		// compute checksum
+	p.PushBackHeader(tcph);
+	cerr << "\tTCP Header added" << endl;
+	cerr << "***** PACKET BUILT SUCCESSFULLY *****" << endl;
 }
