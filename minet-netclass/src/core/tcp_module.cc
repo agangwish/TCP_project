@@ -159,9 +159,8 @@ int main(int argc, char *argv[])
 
 	switch(state) {
 		case LISTEN:
-			cerr << "LISTENING in MUX..." << endl;
-			/***** SYN Packet Received *****/			
-			if (IS_SYN(tcp_flags)) {
+			cerr << "LISTENING in MUX..." << endl;			
+			if (IS_SYN(tcp_flags)) {				// SYN Packet received
 				cerr << "\tSYN packet received" << endl;
 				conn_list_iter->connection = c;
 				conn_list_iter->state.SetState(SYN_RCVD);	// Set state to SYN_RCVD
@@ -174,13 +173,25 @@ int main(int argc, char *argv[])
 				makePacket(p_send, *conn_list_iter, SYN_ACK, 0); // build a SYNACK packet
 				cerr << "\tAttempting to send SYNACK packet" << endl;
 				MinetSend(mux, p_send);	// send SYNACK packet
-				sleep(2);			// wait 2 seconds
-				MinetSend(mux, p_send);	// resend SYNACK packet
+				//sleep(2);			// wait 2 seconds
+				//MinetSend(mux, p_send);	// resend SYNACK packet
 			}
 			cerr << "FINISHED LISTENING" << endl;
 			break;
 	      	case SYN_RCVD:
 			cerr << "SYN Received" << endl;
+			cerr << "CONNECTION ESTABLISHED!" << endl;
+			conn_list_iter->state.SetState(ESTABLISHED);
+			conn_list_iter->state.SetLastAcked(ack_num);	
+			/***** increment sequence number *****/
+			conn_list_iter->state.last_sent = conn_list_iter->state.last_sent + 1;
+			conn_list_iter->bTmrActive = false;
+			static SockRequestResponse *write = NULL;
+			write = new SockRequestResponse(WRITE, conn_list_iter->connection, data_buf, 0, EOK);
+			MinetSend(sock,*write);
+			delete write;
+			cerr << "Response written to socket" << endl;
+			cerr << "FINISHED SYN_RCVD" << endl;
 			break;
 	      	case SYN_SENT:
 			cerr << "SYN Sent" << endl;
@@ -190,6 +201,16 @@ int main(int argc, char *argv[])
 			break;
 	      	case ESTABLISHED:
 			cerr << "ESTABLISHED" << endl;
+			if (IS_FIN(tcp_flags) && IS_ACK(tcp_flags)) {
+				cerr << "\treceived FINACK packet" << endl;
+			} else if (IS_PSH(tcp_flags) && IS_ACK(tcp_flags)) {
+				cerr << "\treceived data packet" << endl;
+			} else if (IS_ACK(tcp_flags)) {
+				cerr << "\treceived ACK packet" << endl;
+			} else {
+				cerr << "\tWARNING: received unexpected packet" << endl;
+			}
+			cerr << "EXITING ESTABLISHED STATE" << endl;
 			break;
 	      	case SEND_DATA:
 			cerr << "SEND DATA" << endl;
