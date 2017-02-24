@@ -1,0 +1,86 @@
+/////////////////////////////////
+// THE JASON GLASS GUIDE TO MINET
+/////////////////////////////////
+/*
+
+This guide will contain an overview of the Minet API and the various classes and functions
+that it contains. Furthermore thi guide will contain helpful code snippets that are useful
+for building out Minet modules and functions.
+
+This guide was written with readability in mind and thus at times underscores, hyphens and
+capitilzation may slightly differ from the actual Minet Master File when convienent.
+
+*/
+
+
+////////////////////////////////
+//THE MINET INTERFACE
+///////////////////////////////
+
+
+
+
+/*
+///////////////////////////////////////////////////////////
+data_type_of_communicaton_between_modules:
+*
+SockLibRequestResponse:
+*
+*													 		 	[APPLICATION]
+*                           		      |
+*                          		[LIBMINET_SOCKET]
+*                          		        |
+SockRequestReponse:							{SOCK_MODULE}
+*              												|
+Packet: 		{UDP_MODULE}{TCP_MODULE}{ICMP_MODULE}{IPOTHER_MODULE}
+*								|         |           |                   |
+*						[**********************IP_MUX********************]
+*													|						|						|
+RawEthernetPacket		{ARP_MODULE}{IP_MODULE}{OTHER_MODULE}
+*													|						|						|
+*										[***********ETHERNET_MUX**********]
+*																			|
+*																[DEVICE_DRIVER]
+*																			|
+*																  [ETHERNET]
+*																	|       |
+*			  | |	|					 				 {READER}{WRITER}
+*		->[MONITOR]<-
+*		->[JAVA_GUI]<-
+*
+*/
+////////////////////////////////////////////////////////////
+
+
+/*//////////////////////////////////////////////////////////
+*******************LIBMINET_SOCKET CLASSES**************************
+
+ARP
+BITSOUCE
+BUFFER
+CONFIG
+CONSTATE
+DEBUG
+ERROR
+ETHERNET
+HEADERTRAILER
+ICMP
+IP
+MINET
+MINET_SOCKET
+MONITOR
+PACKET
+PACKET_QUEUE
+RAW_ETHERNET_PACKET
+RAW_ETHERNET_PACKET_BUFFER
+ROUTE
+SOCK
+SOCKINT
+TCP
+TCPSTATE
+UDP
+UTIL
+
+
+
+*/
