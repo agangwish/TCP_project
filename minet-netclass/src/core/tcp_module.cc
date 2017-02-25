@@ -24,7 +24,7 @@ using std::cerr;
 using std::string;
 using std::queue;
 
-Packet MakeTCPPacket(Connection c, 
+Packet buildPacket(Connection c, 
 		unsigned int id, 
 		unsigned int seqnum, 
 		unsigned int acknum, 
@@ -38,7 +38,7 @@ Packet MakeTCPPacket(Connection c,
 int main(int argc, char *argv[])
 {
 	MinetHandle mux, sock;
-	ConnectionList<TCPState> clist;
+	ConnectionList<TCPState> conn_list;
 	queue<SockRequestResponse> SocksPending;
 
 	MinetInit(MINET_TCP_MODULE);
@@ -124,9 +124,9 @@ int main(int argc, char *argv[])
 				tcph.GetSourcePort(c.destport);
 				c.protocol = IP_PROTO_TCP;
 
-				ConnectionList<TCPState>::iterator cs = clist.FindMatching(c);
+				ConnectionList<TCPState>::iterator cs = conn_list.FindMatching(c);
 
-				if (cs == clist.end()) {
+				if (cs == conn_list.end()) {
 					cerr << "Connection was not in list" << endl;
 					c.dest = IPAddress(IP_ADDRESS_ANY);
 					c.destport = PORT_ANY;
@@ -137,9 +137,6 @@ int main(int argc, char *argv[])
 					cs->connection.destport = c.destport;
 				}
 				cerr << "Current State: " << stateNames[cs->state.GetState()] << endl;
-
-				//if (IS_RST(oldflags)) // TEMP
-				//    getchar();
 
 				switch (cs->state.GetState()) {
 				case LISTEN: 
@@ -152,7 +149,7 @@ int main(int argc, char *argv[])
 						cerr << "\tbuilding SYNACK packet" << endl;
 						SET_SYN(flags);
 						SET_ACK(flags);
-						Packet newp = MakeTCPPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
+						Packet newp = buildPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
 						MinetSend(mux, newp);
 						cerr << "\tpacket sent" << endl;
 						cs->state.SetLastRecvd(acknum + 1);
@@ -166,7 +163,7 @@ int main(int argc, char *argv[])
 						cs->state.SetState(ESTABLISHED);
 						cerr << "\tbuilding ACK packet" << endl;
 						SET_ACK(flags);
-						Packet newp = MakeTCPPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
+						Packet newp = buildPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
 						MinetSend(mux, newp);
 						cerr << "\tpacket sent" << endl;
 						
@@ -187,7 +184,7 @@ int main(int argc, char *argv[])
 						cerr << "\tbuilding SYN_ACK packet" << endl;
 						SET_SYN(flags);
 						SET_ACK(flags);
-						Packet newp = MakeTCPPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
+						Packet newp = buildPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
 						MinetSend(mux, newp);
 						cerr << "\tpacket sent" << endl;
 						cs->state.SetLastRecvd(acknum + 1);
@@ -199,17 +196,14 @@ int main(int argc, char *argv[])
 					if (IS_ACK(oldflags) && !IS_PSH(oldflags)) {
 						cerr << "\tpassive open ACK" << endl;
 						cs->state.SetState(ESTABLISHED);
-						// set last acked
-						//cs->bTmrActive = 0;
 					} else if ((IS_SYN(oldflags) && !IS_ACK(oldflags)) || IS_RST(oldflags)) {
-						// synack dropped
 						cerr << "\tSYNACK dropped" << endl;
 						cs->state.SetLastSent(seqnum);
 						cs->state.SetSendRwnd(winsize);		    
 						cerr << "\tbuilding SYNACK packet" << endl;
 						SET_SYN(flags);
 						SET_ACK(flags);
-						Packet newp = MakeTCPPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
+						Packet newp = buildPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
 						MinetSend(mux, newp);
 						cerr << "\tpacket sent" << endl;
 						cs->state.SetLastRecvd(acknum + 1);
@@ -223,7 +217,7 @@ int main(int argc, char *argv[])
 						cs->state.SetState(CLOSE_WAIT);
 						cerr << "\tbuilding ACK packet" << endl;
 						SET_ACK(flags);
-						Packet newp = MakeTCPPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
+						Packet newp = buildPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
 						MinetSend(mux, newp);
 						cerr << "\tpacket sent" << endl;
 						SockRequestResponse close(CLOSE, 
@@ -241,7 +235,7 @@ int main(int argc, char *argv[])
 						cerr << "\tbuilding SYN_ACK packet" << endl;
 						SET_SYN(flags);
 						SET_ACK(flags);
-						Packet newp = MakeTCPPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
+						Packet newp = buildPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
 						MinetSend(mux, newp);
 						cerr << "\tpacket sent" << endl;
 						cs->state.SetLastRecvd(acknum + 1);
@@ -252,13 +246,9 @@ int main(int argc, char *argv[])
 
 						ipl.GetTotalLength(templen);
 						ipl.GetHeaderLength(temphlen);
-
 						templen -= 4 * temphlen + tcphlen;
-
 						data = p.GetPayload().ExtractFront(templen);
-
 						cerr << "DATA: \n" << data << endl << endl;
-
 						SockRequestResponse write(WRITE,
 								cs->connection,
 								data,
@@ -269,7 +259,7 @@ int main(int argc, char *argv[])
 						SocksPending.push(write);
 						cerr << "\tbuilding ACK packet" << endl;
 						SET_ACK(flags);
-						Packet newp = MakeTCPPacket(c, id, seqnum, acknum + templen, winsize, hlen, uptr, flags, "", 0);
+						Packet newp = buildPacket(c, id, seqnum, acknum + templen, winsize, hlen, uptr, flags, "", 0);
 						cs->state.SetLastRecvd(acknum + templen);
 						cerr << "SENDING ACK PACKET: \n" << newp << endl;
 						MinetSend(mux, newp);
@@ -283,7 +273,7 @@ int main(int argc, char *argv[])
 						cs->state.SetState(TIME_WAIT);
 						cerr << "\tbuilding ACK packet" << endl;
 						SET_ACK(flags);
-						Packet newp = MakeTCPPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
+						Packet newp = buildPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
 						MinetSend(mux, newp);
 						cerr << "\tpacket sent" << endl;
 						cs->state.SetLastRecvd(acknum + 1);
@@ -301,7 +291,7 @@ int main(int argc, char *argv[])
 						cs->state.SetState(TIME_WAIT);
 						cerr << "\tbuilding ACK packet" << endl;
 						SET_ACK(flags);
-						Packet newp = MakeTCPPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
+						Packet newp = buildPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
 						MinetSend(mux, newp);
 						cerr << "\tpacket sent" << endl;
 						cs->state.SetLastRecvd(acknum + 1);
@@ -311,7 +301,7 @@ int main(int argc, char *argv[])
 				case LAST_ACK: 
 					cerr << "LAST_ACK STATE" << endl;
 					if (IS_ACK(oldflags)) {
-						clist.erase(cs);
+						conn_list.erase(cs);
 					}
 					cerr << "EXITING LAST_ACK STATE" << endl;
 					break;
@@ -326,16 +316,16 @@ int main(int argc, char *argv[])
 				MinetReceive(sock,s);
 				cerr << "Received Socket Request:" << s << endl;
 
-				ConnectionList<TCPState>::iterator cs = clist.FindMatching(s.connection);
+				ConnectionList<TCPState>::iterator cs = conn_list.FindMatching(s.connection);
 
 				ConnectionToStateMapping<TCPState> m;
 
-				if (cs == clist.end()) {
+				if (cs == conn_list.end()) {
 					cerr << "CONNECTION WAS NOT IN LIST" << endl;
 					m.connection = s.connection;
 					m.state.SetState(CLOSED);
-					clist.push_back(m);
-					cs = clist.FindMatching(s.connection);
+					conn_list.push_back(m);
+					cs = conn_list.FindMatching(s.connection);
 				}
 
 				Packet newp;
@@ -352,7 +342,7 @@ int main(int argc, char *argv[])
 					cs->state.SetState(SYN_SENT);
 					cerr << "\tbuilding SYN packet" << endl;
 					SET_SYN(flags);
-					newp = MakeTCPPacket(s.connection, id, seqnum, acknum, winsize, hlen, uptr, flags, "", 0);
+					newp = buildPacket(s.connection, id, seqnum, acknum, winsize, hlen, uptr, flags, "", 0);
 					MinetSend(mux, newp);
 					cerr << "\tpacket sent" << endl;
 					
@@ -384,7 +374,6 @@ int main(int argc, char *argv[])
 						sending = res.bytes - s.bytes;
 						if (sending != 0) {
 							cerr << "\tfound different sock request" << endl;
-
 							SockRequestResponse res(WRITE, 
 									m.connection, 
 									data.ExtractBack(sending), 
@@ -427,7 +416,7 @@ int main(int argc, char *argv[])
 							data = s.data.ExtractFront(sending);
 							data.GetData(datachars, sending, 0);
 
-							newp = MakeTCPPacket(s.connection, id, seqnum, acknum, winsize, hlen, uptr, flags, datachars, sending);
+							newp = buildPacket(s.connection, id, seqnum, acknum, winsize, hlen, uptr, flags, datachars, sending);
 							MinetSend(mux, newp);
 							cerr << "\tsending data packet..." << endl;
 							cs->state.SetLastSent(seqnum + sending);
@@ -459,7 +448,7 @@ int main(int argc, char *argv[])
 					cs->state.SetLastSent(seqnum);
 					acknum = m.state.GetLastRecvd();
 					cs->state.SetLastRecvd(acknum);
-					newp = MakeTCPPacket(s.connection, id, seqnum, acknum, winsize, hlen, uptr, flags, "", 0);
+					newp = buildPacket(s.connection, id, seqnum, acknum, winsize, hlen, uptr, flags, "", 0);
 					MinetSend(mux, newp);
 					cerr << "\tFIN packet sent" << endl;
 					cerr << "EXITING SOCK CLOSE CASE" << endl;
@@ -468,22 +457,22 @@ int main(int argc, char *argv[])
 			}
 			if (event.eventtype == MinetEvent::Timeout) {
 				cerr << "TIMOUT OCCURED" << endl;
-				ConnectionList<TCPState>::iterator i = clist.begin();
-				for (; i != clist.end(); ++i) {
+				ConnectionList<TCPState>::iterator i = conn_list.begin();
+				for (; i != conn_list.end(); ++i) {
 					if ((*i).bTmrActive)
 						cerr << *i << endl;
 				}
 			}
-			if ((*clist.FindEarliest()).Matches((*clist.end()).connection))
+			if ((*conn_list.FindEarliest()).Matches((*conn_list.end()).connection))
 				min_timeout = -1;
 			else
-				min_timeout = (*clist.FindEarliest()).timeout;
+				min_timeout = (*conn_list.FindEarliest()).timeout;
 		}
 	}
 	return 0;
 }
 
-Packet MakeTCPPacket(Connection c, unsigned int id, unsigned int seqnum, unsigned int acknum, unsigned short winsize, unsigned char hlen, unsigned short urgptr, unsigned char flags, const char *data, size_t datalen) {
+Packet buildPacket(Connection c, unsigned int id, unsigned int seqnum, unsigned int acknum, unsigned short winsize, unsigned char hlen, unsigned short urgptr, unsigned char flags, const char *data, size_t datalen) {
 	cerr << "\n*****BUILDING PACKET*****" << endl;
 	Packet p(data, datalen);
 	//    Packet p;
