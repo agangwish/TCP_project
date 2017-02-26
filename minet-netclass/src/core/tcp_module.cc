@@ -40,7 +40,7 @@ int main(int argc, char *argv[])
 	MinetHandle mux, sock;
 	ConnectionList<TCPState> conn_list;
 	queue<SockRequestResponse> SocksPending;
-	SockRequestResponse request, response;
+	SockRequestResponse request, response, close;
 
 	MinetInit(MINET_TCP_MODULE);
 
@@ -127,33 +127,25 @@ int main(int argc, char *argv[])
 
 				ConnectionList<TCPState>::iterator cs = conn_list.FindMatching(c);
 
-				if (cs == conn_list.end())	// If the search makes it to the end of the list
-				{
-					cerr << "MUX: The connection was NOT in the list!" << endl;
-					cerr<< "Adding to list."<<endl;
+				if (cs == conn_list.end()) {
+					cerr << "CONNECTION WAS NOT IN LIST" << endl;
 					request.connection.dest = c.dest;
 					request.connection.src = c.src;
-					TCPState * server = new TCPState(1, LISTEN, 5);	// Create a server state
-					ConnectionToStateMapping<TCPState> new_CTSM(request.connection, Time(), *server, false);	// Create a mapping entry
-					conn_list.push_back(new_CTSM);	// Add the entry to the mapping
+					//request.connection.srcport = c.srcport;
+					//request.connection.destport = c.destport;
+					request.connection.protocol = IP_PROTO_TCP;
+					TCPState *server = new TCPState(1, LISTEN, 5);
+					ConnectionToStateMapping<TCPState> new_cs(request.connection, Time(), *server, false);
+					conn_list.push_back(new_cs);
 					response.type = STATUS;
-					response.connection = request.connection;
+					response.connection = c;
 					response.bytes = 0;
 					response.error = EOK;
 					MinetSend(sock, response);
+					cerr << "Requesting new socket" << endl;
+					cs = conn_list.FindMatching(c);
 				}
 
-
-				//				if (cs == conn_list.end()) {
-				//					cerr << "Connection was not in list" << endl;
-				//					c.dest = IPAddress(IP_ADDRESS_ANY);
-				//					c.destport = PORT_ANY;
-				//				}
-				//				if (cs->connection.dest == IPAddress(IP_ADDRESS_ANY) || cs->connection.destport == PORT_ANY) {
-				//					cerr << "Setting Destination IP and port" << endl;
-				//					cs->connection.dest = c.dest;
-				//					cs->connection.destport = c.destport;
-				//				}
 				cerr << "Current State: " << stateNames[cs->state.GetState()] << endl;
 
 				switch (cs->state.GetState()) {
@@ -232,12 +224,12 @@ int main(int argc, char *argv[])
 					cerr << "ESTABLISHED STATE" << endl;
 					if (IS_FIN(oldflags)) {
 						cerr << endl << "\treceived FIN packet" << endl;
-						cs->state.SetState(CLOSE_WAIT);
 						cerr << "\tbuilding ACK packet" << endl;
 						SET_FIN(flags);
 						SET_ACK(flags);
 						Packet newp = buildPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
 						MinetSend(mux, newp);
+						cs->state.SetState(CLOSE_WAIT);
 						cerr << "\tpacket sent" << endl;
 						SockRequestResponse close(CLOSE, 
 								cs->connection, 
@@ -246,6 +238,11 @@ int main(int argc, char *argv[])
 								EOK); 
 						MinetSend(sock, close);
 						cerr << "\tsocket closed" << endl;
+						flags = 0;
+						SET_FIN(flags);
+						newp = buildPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
+						MinetSend(mux, newp);
+						cerr << "SENT LAST FIN PACKET" << endl;
 						cs->state.SetLastRecvd(acknum + 1);
 					} else if (IS_RST(oldflags)) {
 						cerr << endl << "\treceived RST packet" << endl;
@@ -269,8 +266,10 @@ int main(int argc, char *argv[])
 						data = p.GetPayload().ExtractFront(templen);
 						cerr << "DATA: \n" << data << endl << endl;
 						cs->connection.dest = c.dest;
+						cs->connection.src = c.src;
 						cerr << "CS DEST: " << cs->connection.dest << "\nC DEST: " << c.dest << endl;
 						cs->connection.destport = c.destport;
+						cs->connection.srcport = c.srcport;
 						SockRequestResponse write(WRITE,
 								cs->connection,
 								data,
@@ -321,30 +320,36 @@ int main(int argc, char *argv[])
 					cerr << "EXITING FIN_WAIT2" << endl;
 					break;
 				case CLOSE_WAIT:
-					cerr << "CLOSE_WAIT STATE" << endl;
-					if(IS_ACK(oldflags))
-					{
+				{
+					if (IS_ACK) {
+						cerr << "CLOSE_WAIT STATE" << endl;
+						//cs->state.SetState(LAST_ACK);
 						cerr << "===============START CASE CLOSE_WAIT + IS_ACK===============\n" << endl;
 						// Finished communicating now closing the connection
-						SockRequestResponse close(CLOSE,
-												cs->connection,
-												data,
-												hlen,
-												EOK);
-						MinetSend(sock, close);
+						//					SockRequestResponse close(CLOSE,
+						//							cs->connection,
+						//							data,
+						//							hlen,
+						//							EOK);
+						//					MinetSend(sock, close);
+						//						SET_FIN(flags);
+						//						Packet newp = buildPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
+						//						MinetSend(mux, newp);
 						//conn_list.erase(cs);
+						cs->connection.dest = 0;
+						cs->connection.destport = 0;
+						cerr << "connection: " << cs->connection.dest << cs->connection.destport << endl;
 						cerr << "Connection closed!" << endl;
 						cerr << "===============END CASE CLOSE_WAIT + IS_ACK===============\n" << endl;
+						//conn_list.erase(cs);
 					}
 					break;
-				case LAST_ACK: 
-					cerr << "LAST_ACK STATE" << endl;
-					
-					cerr << "EXITING LAST_ACK STATE" << endl;
+				}
+				default:
+				{
+					cerr << "DEFAULT CASE" << endl;
 					break;
-				case CLOSED:
-					cerr << "CLOSED CASE" << endl;
-					break;
+				}
 				}
 			}
 			/******************/
@@ -361,7 +366,7 @@ int main(int argc, char *argv[])
 				ConnectionToStateMapping<TCPState> m;
 
 				if (cs == conn_list.end()) {
-					cerr << "CONNECTION WAS NOT IN LIST" << endl;
+					cerr << "SOCK CONNECTION WAS NOT IN LIST" << endl;
 					m.connection = s.connection;
 					m.state.SetState(CLOSED);
 					conn_list.push_back(m);
