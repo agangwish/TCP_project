@@ -961,9 +961,10 @@ EXTERNC int minet_connect(int sockfd, struct sockaddr_in * addr) {
 					0, 0);
 	    
 	    debug(3) << "socklib: Connecting to: " << slrr.connection.dest << std::endl;
-	    
+	    cerr << "in socklib, the connect request is: " << slrr << endl;
 	    MinetSend(sock, slrr);
 	    MinetReceive(sock, slrr);
+	    cerr << "in socklib, the connect response is: " << slrr << endl;
 	    minet_errno = slrr.error;
 
 	    if (minet_errno != EOK) {
