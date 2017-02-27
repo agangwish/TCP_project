@@ -18,11 +18,7 @@
 
 #include <queue>
 
-using std::cout;
-using std::endl;
-using std::cerr;
-using std::string;
-using std::queue;
+using namespace std;
 
 Packet buildPacket(Connection c, 
 		unsigned int id, 
@@ -40,6 +36,7 @@ int main(int argc, char *argv[])
 	MinetHandle mux, sock;
 	ConnectionList<TCPState> conn_list;
 	queue<SockRequestResponse> SocksPending;
+	queue<SockRequestResponse> empty;
 	SockRequestResponse request, response, close;
 
 	MinetInit(MINET_TCP_MODULE);
@@ -67,6 +64,7 @@ int main(int argc, char *argv[])
 	unsigned char oldflags, flags = 0, hlen = 5;
 	unsigned int acknum = 0, seqnum = 0, id = rand() % 10000;
 	unsigned short winsize = 14600, uptr = 0;
+	int is_connected = 0;
 	const char* stateNames[] = {"CLOSED",
 			"LISTEN",
 			"SYN_RCVD",
@@ -109,11 +107,12 @@ int main(int argc, char *argv[])
 
 				cerr << "Checksum is " << (tcph.IsCorrectChecksum(p) ? "VALID" : "INVALID") << endl;
 
+
 				tcph.GetFlags(oldflags);
 				tcph.GetSeqNum(acknum);
 				tcph.GetAckNum(seqnum);
 				tcph.GetWinSize(winsize);
-				tcph.GetFlags(oldflags);
+
 
 				if (seqnum == 0) {
 					seqnum = rand() % 50000;
@@ -125,9 +124,10 @@ int main(int argc, char *argv[])
 				tcph.GetSourcePort(c.destport);
 				c.protocol = IP_PROTO_TCP;
 
-				ConnectionList<TCPState>::iterator cs = conn_list.FindMatching(c);
+				ConnectionList<TCPState>::iterator cs = conn_list.FindMatching(c);	
 
-				if (cs == conn_list.end()) {
+				if (cs == conn_list.end() && !is_connected) {
+					is_connected  = 1;
 					cerr << "CONNECTION WAS NOT IN LIST" << endl;
 					request.connection.dest = c.dest;
 					request.connection.src = c.src;
@@ -142,8 +142,11 @@ int main(int argc, char *argv[])
 					response.bytes = 0;
 					response.error = EOK;
 					MinetSend(sock, response);
+					cerr << "INITIAL SOCK SEND: " << response << endl;
 					cerr << "Requesting new socket" << endl;
 					cs = conn_list.FindMatching(c);
+				} else {
+					cerr << "RECEIVED UNEXPECTED PACKET: " << p << endl;
 				}
 
 				cerr << "Current State: " << stateNames[cs->state.GetState()] << endl;
@@ -183,6 +186,7 @@ int main(int argc, char *argv[])
 								0, 
 								EOK);
 						MinetSend(sock, write);
+						cerr << "SYN_SENT SOCK REQ: " << write << endl;
 						cerr << "\tsocket response written" << endl;
 						cs->state.SetLastRecvd(acknum + 1);
 					} else if (IS_SYN(oldflags)) {
@@ -237,6 +241,7 @@ int main(int argc, char *argv[])
 								hlen, // trash
 								EOK); 
 						MinetSend(sock, close);
+						cerr << "EST SOCK CLOSE REQ" << close << endl;
 						cerr << "\tsocket closed" << endl;
 						flags = 0;
 						SET_FIN(flags);
@@ -276,6 +281,7 @@ int main(int argc, char *argv[])
 								templen,
 								EOK);
 						MinetSend(sock, write);
+						cerr << "EST DATA WRITE REQ: " << write << endl;
 						cerr << "\twrite to sock" << endl;
 						SocksPending.push(write);
 						cerr << "\tbuilding ACK packet" << endl;
@@ -323,6 +329,8 @@ int main(int argc, char *argv[])
 				{
 					if (IS_ACK) {
 						cerr << "CLOSE_WAIT STATE" << endl;
+
+						swap(SocksPending, empty);
 						//cs->state.SetState(LAST_ACK);
 						cerr << "===============START CASE CLOSE_WAIT + IS_ACK===============\n" << endl;
 						// Finished communicating now closing the connection
@@ -336,14 +344,29 @@ int main(int argc, char *argv[])
 						//						Packet newp = buildPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
 						//						MinetSend(mux, newp);
 						//conn_list.erase(cs);
-						cs->connection.dest = 0;
-						cs->connection.destport = 0;
+						//cs->connection.dest = 0;
+						//cs->connection.destport = 0;
 						cerr << "connection: " << cs->connection.dest << cs->connection.destport << endl;
 						cerr << "Connection closed!" << endl;
 						cerr << "===============END CASE CLOSE_WAIT + IS_ACK===============\n" << endl;
+						cs->state.SetState(LAST_ACK);
 						//conn_list.erase(cs);
+						//is_connected = 0;
+						//cerr << "CONNECTION STATUS: " << is_connected << endl;
 					}
 					break;
+				case LAST_ACK: {
+					if (IS_ACK) {
+						cerr << "LAST_ACK STATE" << endl;
+						conn_list.erase(cs);
+						cs->connection.dest = 0;
+						cs->connection.destport = 0;
+						cerr << "connection: " << cs->connection.dest << cs->connection.destport << endl;
+						is_connected = 0;
+						cerr << "CONNECTION STATUS: " << is_connected << endl;
+						cerr << "EXITING LAST_ACK STATE" << endl;
+					}
+				}
 				}
 				default:
 				{
