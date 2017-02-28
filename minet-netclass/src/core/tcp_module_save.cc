@@ -18,11 +18,7 @@
 
 #include <queue>
 
-using std::cout;
-using std::endl;
-using std::cerr;
-using std::string;
-using std::queue;
+using namespace std;
 
 Packet buildPacket(Connection c, 
 		unsigned int id, 
@@ -40,7 +36,9 @@ int main(int argc, char *argv[])
 	MinetHandle mux, sock;
 	ConnectionList<TCPState> conn_list;
 	queue<SockRequestResponse> SocksPending;
-	SockRequestResponse request, response;
+	queue<SockRequestResponse> empty;
+	SockRequestResponse request, response, close;
+	int is_p_connected = 0, is_a_connected = 0, is_first = 1;
 
 	MinetInit(MINET_TCP_MODULE);
 
@@ -67,6 +65,8 @@ int main(int argc, char *argv[])
 	unsigned char oldflags, flags = 0, hlen = 5;
 	unsigned int acknum = 0, seqnum = 0, id = rand() % 10000;
 	unsigned short winsize = 14600, uptr = 0;
+
+
 	const char* stateNames[] = {"CLOSED",
 			"LISTEN",
 			"SYN_RCVD",
@@ -109,11 +109,12 @@ int main(int argc, char *argv[])
 
 				cerr << "Checksum is " << (tcph.IsCorrectChecksum(p) ? "VALID" : "INVALID") << endl;
 
+
 				tcph.GetFlags(oldflags);
 				tcph.GetSeqNum(acknum);
 				tcph.GetAckNum(seqnum);
 				tcph.GetWinSize(winsize);
-				tcph.GetFlags(oldflags);
+
 
 				if (seqnum == 0) {
 					seqnum = rand() % 50000;
@@ -125,35 +126,62 @@ int main(int argc, char *argv[])
 				tcph.GetSourcePort(c.destport);
 				c.protocol = IP_PROTO_TCP;
 
-				ConnectionList<TCPState>::iterator cs = conn_list.FindMatching(c);
+				ConnectionList<TCPState>::iterator cs = conn_list.FindMatching(c);	
+				//cerr << "After looking for matching connection: " << c << endl;
+			//	cerr << "Found: " << cs->connection << endl;
 
-				if (cs == conn_list.end())	// If the search makes it to the end of the list
+				if (cs == conn_list.end() || is_p_connected == 0) {
+					is_p_connected  = 1;
+					cerr << "CONNECTION WAS NOT IN LIST" << endl;
+					cerr << "THE PASSIVE OPEN SOCKET IS NOT BOUND" << endl;
+
+					if(is_first == 2)
+					{
+						is_first = 3;
+						cerr << "CONNECTING TO THE PASSIVE OPEN SOCKET" << endl;
+						//cs = conn_list.begin();
+						//cs->connection.dest  = c.dest;
+						//cs->connection.destport= c.destport;
+						//request.connection.dest = c.dest;
+						//request.connection.src = c.src;
+						//cerr << c.srcport << endl;
+						//cerr << c.destport << endl;
+						//request.connection.srcport = c.srcport;
+						//request.connection.destport = c.destport;
+						//request.connection.protocol = IP_PROTO_TCP;
+						//TCPState *server = new TCPState(1, LISTEN, 5);
+						//ConnectionToStateMapping<TCPState> new_cs(request.connection, Time(), *server, false);
+						//conn_list.push_back(new_cs);
+						response.type = STATUS;
+						response.connection = c;
+						response.bytes = 0;
+						response.error = EOK;
+						MinetSend(sock, response);
+						cerr << "INITIAL SOCK SEND: " << response << endl;
+						cerr << "Requesting new socket" << endl;
+						//cs = conn_list.FindMatching(c);
+					}
+					else if(is_first == 0)
+					{
+						is_first = 3;
+						cerr << "REINITIALIZING PASSIVE LISTENING SOCKET: " << endl;
+						cs = conn_list.begin();
+						cs-> connection.dest = c.dest;
+						cs->connection.destport=c.destport;
+						cs->state.SetState(SYN_RCVD);
+						cerr <<"THIS CONNECTION IS " << c.dest << " " << c.destport << endl;
+					}
+				} else if (is_p_connected == 1) {
+
+					cerr << "RECEIVED UNEXPECTED PACKET: " << p << endl;
+				}
+				else if (is_p_connected == 2)
 				{
-					cerr << "MUX: The connection was NOT in the list!" << endl;
-					cerr<< "Adding to list."<<endl;
-					request.connection.dest = c.dest;
-					request.connection.src = c.src;
-					TCPState * server = new TCPState(1, LISTEN, 5);	// Create a server state
-					ConnectionToStateMapping<TCPState> new_CTSM(request.connection, Time(), *server, false);	// Create a mapping entry
-					conn_list.push_back(new_CTSM);	// Add the entry to the mapping
-					response.type = STATUS;
-					response.connection = request.connection;
-					response.bytes = 0;
-					response.error = EOK;
-					MinetSend(sock, response);
+					cerr << "RECVIEVED ACK ON PASSIVE CLOSE FROM CLIENT" << endl;
 				}
 
 
-				//				if (cs == conn_list.end()) {
-				//					cerr << "Connection was not in list" << endl;
-				//					c.dest = IPAddress(IP_ADDRESS_ANY);
-				//					c.destport = PORT_ANY;
-				//				}
-				//				if (cs->connection.dest == IPAddress(IP_ADDRESS_ANY) || cs->connection.destport == PORT_ANY) {
-				//					cerr << "Setting Destination IP and port" << endl;
-				//					cs->connection.dest = c.dest;
-				//					cs->connection.destport = c.destport;
-				//				}
+				cerr << "Current CTSM: " << cs->connection << endl;
 				cerr << "Current State: " << stateNames[cs->state.GetState()] << endl;
 
 				switch (cs->state.GetState()) {
@@ -176,7 +204,7 @@ int main(int argc, char *argv[])
 					break;
 				case SYN_SENT: 
 					cerr << "IN SYN_SENT STATE" << endl;
-					if (IS_SYN(oldflags) && IS_ACK(oldflags)) {
+					if (IS_SYN(oldflags) || IS_ACK(oldflags)) {
 						cerr << "\tactive open ACK" << endl;
 						cs->state.SetState(ESTABLISHED);
 						cerr << "\tbuilding ACK packet" << endl;
@@ -191,6 +219,7 @@ int main(int argc, char *argv[])
 								0, 
 								EOK);
 						MinetSend(sock, write);
+						cerr << "SYN_SENT SOCK REQ: " << write << endl;
 						cerr << "\tsocket response written" << endl;
 						cs->state.SetLastRecvd(acknum + 1);
 					} else if (IS_SYN(oldflags)) {
@@ -232,20 +261,28 @@ int main(int argc, char *argv[])
 					cerr << "ESTABLISHED STATE" << endl;
 					if (IS_FIN(oldflags)) {
 						cerr << endl << "\treceived FIN packet" << endl;
-						cs->state.SetState(CLOSE_WAIT);
 						cerr << "\tbuilding ACK packet" << endl;
 						SET_FIN(flags);
 						SET_ACK(flags);
 						Packet newp = buildPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
 						MinetSend(mux, newp);
+						cs->state.SetState(CLOSE_WAIT);
+						is_p_connected = 2;
 						cerr << "\tpacket sent" << endl;
+						//might adjust this 
 						SockRequestResponse close(CLOSE, 
 								cs->connection, 
 								data, 
 								hlen, // trash
 								EOK); 
 						MinetSend(sock, close);
+						cerr << "EST SOCK CLOSE REQ: " << close << endl;
 						cerr << "\tsocket closed" << endl;
+						flags = 0;
+						SET_FIN(flags);
+						newp = buildPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
+						MinetSend(mux, newp);
+						cerr << "SENT LAST FIN PACKET" << endl;
 						cs->state.SetLastRecvd(acknum + 1);
 					} else if (IS_RST(oldflags)) {
 						cerr << endl << "\treceived RST packet" << endl;
@@ -269,14 +306,17 @@ int main(int argc, char *argv[])
 						data = p.GetPayload().ExtractFront(templen);
 						cerr << "DATA: \n" << data << endl << endl;
 						cs->connection.dest = c.dest;
+						cs->connection.src = c.src;
 						cerr << "CS DEST: " << cs->connection.dest << "\nC DEST: " << c.dest << endl;
 						cs->connection.destport = c.destport;
+						cs->connection.srcport = c.srcport;
 						SockRequestResponse write(WRITE,
 								cs->connection,
 								data,
 								templen,
 								EOK);
 						MinetSend(sock, write);
+						cerr << "EST DATA WRITE REQ: " << write << endl;
 						cerr << "\twrite to sock" << endl;
 						SocksPending.push(write);
 						cerr << "\tbuilding ACK packet" << endl;
@@ -321,30 +361,63 @@ int main(int argc, char *argv[])
 					cerr << "EXITING FIN_WAIT2" << endl;
 					break;
 				case CLOSE_WAIT:
-					cerr << "CLOSE_WAIT STATE" << endl;
-					if(IS_ACK(oldflags))
-					{
+				{
+					if (IS_ACK) {
+						cerr << "CLOSE_WAIT STATE" << endl;
+
+						swap(SocksPending, empty);
+						cerr << "SocksPending empty? : " << SocksPending.empty() << endl;
+						//cs->state.SetState(LAST_ACK);
 						cerr << "===============START CASE CLOSE_WAIT + IS_ACK===============\n" << endl;
 						// Finished communicating now closing the connection
-						SockRequestResponse close(CLOSE,
-												cs->connection,
-												data,
-												hlen,
-												EOK);
-						MinetSend(sock, close);
+						//					SockRequestResponse close(CLOSE,
+						//							cs->connection,
+						//							data,
+						//							hlen,
+						//							EOK);
+						//					MinetSend(sock, close);
+						//						SET_FIN(flags);
+						//						Packet newp = buildPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
+						//						MinetSend(mux, newp);
 						//conn_list.erase(cs);
+						//cs->connection.dest = 0;
+						//cs->connection.destport = 0;
+						cerr << "connection: " << cs->connection.dest << cs->connection.destport << endl;
 						cerr << "Connection closed!" << endl;
 						cerr << "===============END CASE CLOSE_WAIT + IS_ACK===============\n" << endl;
+						cs->state.SetState(LAST_ACK);
+						//conn_list.erase(cs);
+						//is_connected = 0;
+						//cerr << "CONNECTION STATUS: " << is_connected << endl;
 					}
 					break;
-				case LAST_ACK: 
-					cerr << "LAST_ACK STATE" << endl;
-					
-					cerr << "EXITING LAST_ACK STATE" << endl;
+				case LAST_ACK: {
+					if (IS_ACK) {
+						cerr << "LAST_ACK STATE" << endl;
+						//conn_list.erase(cs);
+						cs->connection.dest = 0;
+						cs->connection.destport = 0;
+						cerr << "connection: " << cs->connection.dest << cs->connection.destport << endl;
+						is_p_connected = 0;
+						is_first = 0;
+						cerr << "CONNECTION STATUS: " << is_p_connected << endl;
+						cs->state.SetState(CLOSED);
+						cerr << "EXITING LAST_ACK STATE" << endl;
+						//break;
+					}
+				}
+
+				}
+				case CLOSED: {
+					cerr << "IN THE CLOSED STATE: " << endl;
+					cs->state.SetState(LISTEN);
 					break;
-				case CLOSED:
-					cerr << "CLOSED CASE" << endl;
+				}
+				default:
+				{
+					cerr << "DEFAULT CASE" << endl;
 					break;
+				}
 				}
 			}
 			/******************/
@@ -353,20 +426,49 @@ int main(int argc, char *argv[])
 			if (event.handle==sock) {
 				cerr << endl << "IN SOCK HANDLER" << endl;
 				SockRequestResponse s;
+				ConnectionToStateMapping<TCPState> m;
 				MinetReceive(sock,s);
 				cerr << "Received Socket Request:" << s << endl;
+				if(is_first == 1)
+				{
+					//MinetReceive(sock,s);
+					//cerr << "Received Socket Request:" << s << endl;
+				}
+				else if(is_first == 0)
+				{
+				//	cerr << "THIS IS NOT THE FIRST SOCKET REQUEST" << endl;
+					//cerr << "THIS SOCKET IS: " << s << endl;
+				}
 
 				ConnectionList<TCPState>::iterator cs = conn_list.FindMatching(s.connection);
+				cerr << "Current CTSM: " << cs->connection << endl;
+				cerr << "Current State: " << stateNames[cs->state.GetState()] << endl;
+				//if (cs->state.GetState() == ESTABLISHED)
+					//s.type = WRITE;
 
-				ConnectionToStateMapping<TCPState> m;
-
-				if (cs == conn_list.end()) {
-					cerr << "CONNECTION WAS NOT IN LIST" << endl;
+				/*if (cs == conn_list.end()) {
+					cerr << "SOCK CONNECTION WAS NOT IN LIST" << endl;
+					cerr << "MAKING THE STATIC SOCKET FOR THE PASSIVE OPEN CASE" << endl;
 					m.connection = s.connection;
 					m.state.SetState(CLOSED);
-					conn_list.push_back(m);
+					TCPState *server = new TCPState(1, LISTEN, 5);
+					ConnectionToStateMapping<TCPState> new_cs(m.connection, Time(), *server, true);
+
+					conn_list.push_back(new_cs);
 					cs = conn_list.FindMatching(s.connection);
+					//conn_list.push_back(new_cs);
+					is_first = 2; //used for an initialization trigger
 				}
+				else if (cs != conn_list.end())
+				{
+					cerr << "SOCK CONNECTION WAS IN LIST" << endl;
+					//if(is_first == 0)
+					//{
+					MinetReceive(sock,s);
+					cerr << "Received Socket Request:" << s << endl;
+					//	}
+					//	if(is_first == 
+				}*/
 
 				Packet newp;
 				unsigned int len = 0;
@@ -379,12 +481,29 @@ int main(int argc, char *argv[])
 					cerr << "\tactive open init" << endl;
 
 					seqnum = rand() % 50000;
-					cs->state.SetState(SYN_SENT);
+					cerr << "SOCK CONNECTION WAS NOT IN LIST" << endl;
+					cerr << "MAKING THE STATIC SOCKET FOR THE ACTIVE OPEN CASE" << endl;
+					m.connection = s.connection;
+				
+					cerr << "THE CONNECTION IS: " << m.connection << endl;
+
+					TCPState *server = new TCPState(seqnum, SYN_SENT, 1);
+					ConnectionToStateMapping<TCPState> new_cs(m.connection, Time()+2, *server, true);
+					conn_list.push_back(new_cs);
+					cs = conn_list.FindMatching(s.connection);
+					//cerr << "now in cs: " << cs->connection << endl;
+					cerr << "\tpacket sent" << endl;
 					cerr << "\tbuilding SYN packet" << endl;
 					SET_SYN(flags);
-					newp = buildPacket(s.connection, id, seqnum, acknum, winsize, hlen, uptr, flags, "", 0);
+					//SET_ACK(flags);
+					newp = buildPacket(m.connection, id, seqnum, acknum, winsize, hlen, uptr, flags, "", 0);
+					MinetSend(mux, newp);
+					sleep(2);
 					MinetSend(mux, newp);
 					cerr << "\tpacket sent" << endl;
+					IPHeader ipl=newp.FindHeader(Headers::IPHeader);
+					TCPHeader tcph=newp.FindHeader(Headers::TCPHeader);
+					//cerr << " the headers were: " << ipl << " " << tcph << endl;
 
 					SockRequestResponse res(STATUS, 
 							cs->connection, 
@@ -394,6 +513,11 @@ int main(int argc, char *argv[])
 					MinetSend(sock, res);
 					cs->state.SetLastSent(seqnum);
 					cs->state.SetLastRecvd(acknum);
+					
+					cs->state.SetState(SYN_SENT);
+					//cerr << "now in cs: " << cs->connection << endl;
+
+
 				}
 				cerr << "EXITING SOCK CONNECT CASE" << endl;
 				break;
@@ -412,7 +536,7 @@ int main(int argc, char *argv[])
 						SockRequestResponse res = SocksPending.front();
 						SocksPending.pop();
 						sending = res.bytes - s.bytes;
-						if (sending != 0) {
+						/*if (sending != 0) {
 							cerr << "\tfound different sock request" << endl;
 							SockRequestResponse res(WRITE, 
 									m.connection, 
@@ -422,14 +546,14 @@ int main(int argc, char *argv[])
 							MinetSend(sock, res);
 							cerr << "\tsock response sent" << endl;
 							SocksPending.push(res);
-						}
+						}*/
 					}
 				}
 				cerr << "EXITING SOCK STATUS CASE" << endl;
 				break;
 				case WRITE: 
 					cerr << "SOCK WRITE CASE" << endl;
-					if (m.state.GetState() == ESTABLISHED) {
+					if (cs->state.GetState() == ESTABLISHED) {
 						cerr << "\tcurrently in ESTABLISHED state" << endl;
 						acknum = m.state.GetLastRecvd();
 						len = s.data.GetSize();
@@ -481,19 +605,26 @@ int main(int argc, char *argv[])
 					else {
 						cerr << "\tunexpected state: " << cs->state.GetState() << endl;
 					}
-
-					SET_FIN(flags);
-					seqnum = m.state.GetLastSent();
-					seqnum++;
-					cs->state.SetLastSent(seqnum);
-					acknum = m.state.GetLastRecvd();
-					cs->state.SetLastRecvd(acknum);
-					newp = buildPacket(s.connection, id, seqnum, acknum, winsize, hlen, uptr, flags, "", 0);
-					MinetSend(mux, newp);
-					cerr << "\tFIN packet sent" << endl;
-					cerr << "EXITING SOCK CLOSE CASE" << endl;
+					break;
+				default:
+				{
+					cerr << "ENTERED THE SOCK DEFAULT CASE" << endl;
 					break;
 				}
+				SET_FIN(flags);
+				seqnum = m.state.GetLastSent();
+				seqnum++;
+				cs->state.SetLastSent(seqnum);
+				acknum = m.state.GetLastRecvd();
+				cs->state.SetLastRecvd(acknum);
+				newp = buildPacket(s.connection, id, seqnum, acknum, winsize, hlen, uptr, flags, "", 0);
+				MinetSend(mux, newp);
+				cerr << "\tFIN packet sent" << endl;
+				cerr << "EXITING SOCK CLOSE CASE" << endl;
+				break;
+				}
+
+
 			}
 			if (event.eventtype == MinetEvent::Timeout) {
 				cerr << "TIMOUT OCCURED" << endl;
