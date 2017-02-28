@@ -129,7 +129,16 @@ int main(int argc, char *argv[])
 				ConnectionList<TCPState>::iterator cs = conn_list.FindMatching(c);	
 				//cerr << "After looking for matching connection: " << c << endl;
 				//	cerr << "Found: " << cs->connection << endl;
-				if (!is_a_connected && IS_FIN(oldflags)) {
+				if (!is_a_connected  && !is_p_connected && (IS_FIN(oldflags) || IS_RST(oldflags))) {
+					SET_FIN(flags);
+					SET_ACK(flags);
+					Packet newp = buildPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
+					MinetSend(mux, newp);
+					cs = conn_list.begin();
+					continue;
+				}
+
+				if (!is_p_connected && (IS_FIN(oldflags)  || IS_SYN(oldflags) || IS_RST(oldflags)  || IS_ACK(oldflags)))    {
 					SET_FIN(flags);
 					SET_ACK(flags);
 					Packet newp = buildPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
@@ -148,19 +157,7 @@ int main(int argc, char *argv[])
 					{
 						is_first = 3;
 						cerr << "CONNECTING TO THE PASSIVE OPEN SOCKET" << endl;
-						//cs = conn_list.begin();
-						//cs->connection.dest  = c.dest;
-						//cs->connection.destport= c.destport;
-						//request.connection.dest = c.dest;
-						//request.connection.src = c.src;
-						//cerr << c.srcport << endl;
-						//cerr << c.destport << endl;
-						//request.connection.srcport = c.srcport;
-						//request.connection.destport = c.destport;
-						//request.connection.protocol = IP_PROTO_TCP;
-						//TCPState *server = new TCPState(1, LISTEN, 5);
-						//ConnectionToStateMapping<TCPState> new_cs(request.connection, Time(), *server, false);
-						//conn_list.push_back(new_cs);
+					
 						response.type = STATUS;
 						response.connection = c;
 						response.bytes = 0;
@@ -168,14 +165,14 @@ int main(int argc, char *argv[])
 						MinetSend(sock, response);
 						cerr << "INITIAL SOCK SEND: " << response << endl;
 						cerr << "Requesting new socket" << endl;
-						//cs = conn_list.FindMatching(c);
+						cs = conn_list.FindMatching(c);
 					}
 					else if(is_first == 0)
 					{
 						is_first = 3;
 						cerr << "REINITIALIZING PASSIVE LISTENING SOCKET: " << endl;
 						cs = conn_list.begin();
-						cs-> connection.dest = c.dest;
+						cs->connection.dest = c.dest;
 						cs->connection.destport=c.destport;
 						cs->state.SetState(SYN_RCVD);
 						cerr <<"THIS CONNECTION IS " << c.dest << " " << c.destport << endl;
@@ -388,23 +385,11 @@ int main(int argc, char *argv[])
 						swap(SocksPending, empty);
 						cerr << "SocksPending empty? : " << SocksPending.empty() << endl;
 						//cs->state.SetState(LAST_ACK);
-						cerr << "===============START CASE CLOSE_WAIT + IS_ACK===============\n" << endl;
-						// Finished communicating now closing the connection
-						//					SockRequestResponse close(CLOSE,
-						//							cs->connection,
-						//							data,
-						//							hlen,
-						//							EOK);
-						//					MinetSend(sock, close);
-						//						SET_FIN(flags);
-						//						Packet newp = buildPacket(c, id, seqnum, acknum + 1, winsize, hlen, uptr, flags, "", 0);
-						//						MinetSend(mux, newp);
-						//conn_list.erase(cs);
-						//cs->connection.dest = 0;
-						//cs->connection.destport = 0;
+						cerr << "START CASE CLOSE_WAIT + IS_ACK\n" << endl;
+						
 						cerr << "connection: " << cs->connection.dest << cs->connection.destport << endl;
 						cerr << "Connection closed!" << endl;
-						cerr << "===============END CASE CLOSE_WAIT + IS_ACK===============\n" << endl;
+						cerr << "END CASE CLOSE_WAIT + IS_ACK\n" << endl;
 						cs->state.SetState(LAST_ACK);
 						//conn_list.erase(cs);
 						//is_connected = 0;
@@ -465,31 +450,20 @@ int main(int argc, char *argv[])
 				SockRequestResponse s;
 				MinetReceive(sock,s);
 				cerr << "Received Socket Request:" << s << endl;
-				if(is_first == 1)
-				{
-					//MinetReceive(sock,s);
-					//cerr << "Received Socket Request:" << s << endl;
-				}
-				else if(is_first == 0)
-				{
-					//	cerr << "THIS IS NOT THE FIRST SOCKET REQUEST" << endl;
-					//cerr << "THIS SOCKET IS: " << s << endl;
-				}
-
+			
 				ConnectionList<TCPState>::iterator cs = conn_list.FindMatching(s.connection);
 				cerr << "Current CTSM: " << cs->connection << endl;
 				cerr << "Current State: " << stateNames[cs->state.GetState()] << endl;
-				//if (cs->state.GetState() == ESTABLISHED)
-				//s.type = WRITE;
+				
 
-				/*if (cs == conn_list.end()) {
+				if (cs == conn_list.end()  && !is_p_connected) {
+					is_p_connected = 1;
 					cerr << "SOCK CONNECTION WAS NOT IN LIST" << endl;
 					cerr << "MAKING THE STATIC SOCKET FOR THE PASSIVE OPEN CASE" << endl;
-					m.connection = s.connection;
-					m.state.SetState(CLOSED);
+				
+					cs->state.SetState(CLOSED);
 					TCPState *server = new TCPState(1, LISTEN, 5);
-					ConnectionToStateMapping<TCPState> new_cs(m.connection, Time(), *server, true);
-
+					ConnectionToStateMapping<TCPState> new_cs(s.connection, Time(), *server, false);
 					conn_list.push_back(new_cs);
 					cs = conn_list.FindMatching(s.connection);
 					//conn_list.push_back(new_cs);
@@ -500,11 +474,11 @@ int main(int argc, char *argv[])
 					cerr << "SOCK CONNECTION WAS IN LIST" << endl;
 					//if(is_first == 0)
 					//{
-					MinetReceive(sock,s);
+				//	MinetReceive(sock,s);
 					cerr << "Received Socket Request:" << s << endl;
 					//	}
 					//	if(is_first == 
-				}*/
+				}
 
 				Packet newp;
 				unsigned int len = 0;
@@ -568,17 +542,17 @@ int main(int argc, char *argv[])
 						SockRequestResponse res = SocksPending.front();
 						SocksPending.pop();
 						sending = res.bytes - s.bytes;
-						/*if (sending != 0) {
+						if (sending != 0) {
 							cerr << "\tfound different sock request" << endl;
 							SockRequestResponse res(WRITE, 
-									m.connection, 
+									s.connection, 
 									data.ExtractBack(sending), 
 									sending, 
 									EOK);
 							MinetSend(sock, res);
 							cerr << "\tsock response sent" << endl;
 							SocksPending.push(res);
-						}*/
+						}
 					}
 				}
 				cerr << "EXITING SOCK STATUS CASE" << endl;
