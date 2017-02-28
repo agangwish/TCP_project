@@ -1,0 +1,17 @@
+README for TCP_Project
+Group:
+Alex Gangwish: agg496
+Jason Glass: jcg608
+
+
+
+Specification of Work:
+Alex: Passive Open, State-Machine, Passive Close, Interactive Dataflow, Go-Back-N, timer structure, socket calls
+Jason: Active Open/Close, Passive Close, Interactive Dataflow, Debugging from Passive-> Active
+
+
+Specific Functionality:
+Passive: Works for one connection. Attempting to make another passive open while another is still active
+causes the open one to stop echoing to the screen.
+
+Active: Close/Open works and shows data being passed between the client and server.
