@@ -15,4 +15,4 @@ chmod a+w ether2mon
 chmod a+w ether2mux
 cd ..
 cp minet_safe.cfg minet.cfg
-./start_minet.sh "tcp_client u tlab-04.ece.northwestern.edu  9030"
+./start_minet.sh "tcp_client u tlab-04.ece.northwestern.edu  9031"
